@@ -7,7 +7,7 @@ import network
 def main():
     # Logger settings
     logger = logging.getLogger('Sim_log')
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
 
     ch = logging.StreamHandler()
     ch.setLevel(logging.INFO)
