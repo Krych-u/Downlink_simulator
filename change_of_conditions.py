@@ -5,8 +5,8 @@ import random
 
 
 class ChangeOfConditions(event.Event):
-    def __init__(self, logger, event_queue_, user_, time_, sim_network_, rb_max_nb_, rb_number_, rb_al_time_):
-        super().__init__(logger, event_queue_, time_, sim_network_, rb_max_nb_, rb_number_, rb_al_time_)
+    def __init__(self, logger, event_queue_, user_, time_, sim_network_, rb_max_nb_, rb_number_, rb_al_time_, rand_con):
+        super().__init__(logger, event_queue_, time_, sim_network_, rb_max_nb_, rb_number_, rb_al_time_, rand_con)
 
         self.user = user_
 

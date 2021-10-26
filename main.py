@@ -1,5 +1,4 @@
 import logging
-import random
 import simulator
 import network
 
@@ -10,7 +9,7 @@ def main():
     logger.setLevel(logging.DEBUG)
 
     ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
+    ch.setLevel(logging.DEBUG)
 
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     ch.setFormatter(formatter)
@@ -40,13 +39,17 @@ def main():
         print("Set simulation end time [ms]: ")
         end_time = input()
 
+        try:
+            end_time = int(end_time)
+        except ValueError:
+            print("Wrong input value type! Please try again typing a number: ")
+            end_time = -1
+
+
     # ======================================================================
     # ----------Simulation:
     # Simulation parameters:
-    rb_number = 50
-    network_ = network.Network(logger, 5)
-    time_ = 200
-    simulator_ = simulator.Simulator(logger, step_mode, rb_number, network_)
+    simulator_ = simulator.Simulator(logger, step_mode)
     simulator_.run(end_time)
 
 
