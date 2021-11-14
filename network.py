@@ -119,6 +119,7 @@ class Network:
             i += 1
 
     def return_sys_th(self):
+
         sum = 0
         for rb in self.rb_list:
             sum += rb.throughput

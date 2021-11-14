@@ -31,13 +31,14 @@ class Stat:
         plt.axis('tight')
         plt.show()
 
-        plt.hist(self.ue_th_list, density=True,  bins=100)
+        plt.hist(self.ue_th_list, bins=int(len(self.ue_th_list)/10))
         plt.ylabel('UE throughput [kbps]')
         plt.xlabel('Number of UE')
         plt.show()
 
         print(f'Average UE throughput: {self.av_th}')
         print(f'Average wait time: {self.av_wait_time}')
+
 
 
 

@@ -1,5 +1,5 @@
 import numpy as np
-
+import matplotlib.pyplot as plt
 
 class User:
     RB_BANDWIDTH = 180  # Bandwidth of single RB  [kHz]
@@ -7,21 +7,21 @@ class User:
 
     def __init__(self, data, user_id, rb_nb, rand_cont, start_time):
 
-        self.received_data = 0    # How many data has user received
+        self.received_data = 0        # How many data has user received
         self.start_time = start_time  # Time when user appeared in network
-        self.rb_amount = rb_nb
+        self.rb_amount = rb_nb        # Total number of rbs in network
         self.random_container = rand_cont
 
         self.mean_snr = self.random_container['mean_snr'].uniform(-10, 10)
         # List of SNR values for each RB
         self.snr_list = self.generate_snr(self.mean_snr, self.rb_amount, self.random_container['rb_number'])
         self.allocated_snr_list = []  # SNR list of currently allocated RBs
-        self.throughput = 0       # Throughput depends on number of allocated RBs and SNR
+        self.throughput = 0           # Throughput depends on number of allocated RBs and SNR
 
-        self.data = data          # data number
+        self.data = data              # data number
         self.user_id = user_id
         self.rb_number = self.rb_number_generator(User.MEAN_RB, self.random_container['rb_number'])  # Expected RB number
-        self.allocated_rb = 0     # Number of currently allocated RBs to this user
+        self.allocated_rb = 0         # Number of currently allocated RBs to this user
 
         return
 
@@ -40,6 +40,14 @@ class User:
         phase = rand_gen.uniform(0, 2 * np.pi)
         x = np.linspace(-np.pi, np.pi, rb_nb)
         snr_list = np.sin(x + phase) + mean_snr
+
+        #xx = np.linspace(0, rb_nb-1, rb_nb)
+
+        #plt.plot(xx, snr_list)
+        #plt.xlabel('RB ')
+        #plt.ylabel('SNR [dB]')
+        #plt.axis('tight')
+        #plt.show()
 
         return snr_list
 

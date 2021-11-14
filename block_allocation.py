@@ -16,26 +16,27 @@ class BlockAllocation(event.Event):
 
     def execute(self):
 
+        # Updating received data
+        self.sim_network.update_received_data(self.update_time, self.time)
+        self.sim_network.clear_rb()
+
+        # RB allocation
         if self.ALGORITHM_TYPE == 0:
 
-            # Updating received data
-            self.sim_network.update_received_data(self.update_time, self.time)
-
-            self.sim_network.clear_rb()
-
-            # RB allocation
             self.log.info("RB allocation using maximum throughput algorithm")
             self.maximum_throughput()
 
-            # Update stats - system throughput
-            self.stats.sys_th_list.append(self.sim_network.return_sys_th())
-
-            # Display current network status
-            self.sim_network.display_snr_list()
-            self.sim_network.display_rbs()
-
         elif self.ALGORITHM_TYPE == 1:
-            pass
+            self.log.info("RB allocation using round robin algorithm")
+            self.round_robin()
+
+        # Update stats - system throughput
+        self.stats.sys_th_list.append(self.sim_network.return_sys_th())
+
+        # Display current network status
+        self.sim_network.display_snr_list()
+        self.sim_network.display_rbs()
+
 
         # --------------------------------------------------
         # Adding next rb_allocation event to event queue
@@ -83,7 +84,25 @@ class BlockAllocation(event.Event):
             user.throughput = user.calculate_throughput()
 
     def round_robin(self):
-        pass
+        i = 0
+        for user in self.sim_network.users_list:
+            if i == len(self.sim_network.rb_list) - 1:
+                break
+
+            for rb in range(user.rb_number):
+                if i == len(self.sim_network.rb_list) - 1:
+                    break
+
+                self.sim_network.rb_list[i].rb_user = user
+                self.sim_network.rb_list[i].snr = user.snr_list[i]
+                user.allocated_snr_list.append(user.snr_list[i])
+                self.sim_network.rb_list[i].throughput = self.shannon_th(user.snr_list[i])
+
+                i += 1
+
+            user.throughput = user.calculate_throughput()
+
+        return
 
     @staticmethod
     def shannon_th(snr):
