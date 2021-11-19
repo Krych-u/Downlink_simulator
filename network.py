@@ -1,5 +1,5 @@
 import user
-
+import block_allocation
 
 class ResourceBlock:
     def __init__(self):
@@ -24,20 +24,25 @@ class Network:
         self.rb_number = 50
         self.users_list = []
         self.rb_list = []
+        self.rb_throughputs = []
         self.random_generator = rand_gen
         self.stat = stat
 
         for x in range(self.rb_number):
             self.rb_list.append(ResourceBlock())
+            self.rb_throughputs.append(0)
         self.error_flag = False
 
         self.log = logger
         self.rb_al_time = rb_al_time_
 
     def clear_rb_list(self):
+        i = 0
         for ite in self.rb_list:
             ite.rb_user = None
             ite.throughput = 0
+            self.rb_throughputs[i] = 0
+            i += 1
 
         for ite in self.users_list:
             ite.allocated_rb_number = 0
@@ -93,6 +98,15 @@ class Network:
             rb.throughput = 0
             rb.snr = 0
 
+        for u in self.users_list:
+            u.allocated_snr_list.clear()
+            u.allocated_rb_list.clear()
+            u.allocated_rb = 0
+
+
+
+
+
     def push_user_to_list(self, data, user_id, start_time):
         new_user = user.User(data, user_id, self.rb_number, self.random_generator, start_time)
         self.users_list.append(new_user)
@@ -126,7 +140,28 @@ class Network:
 
         return sum
 
+    def update_rb(self, user, rb):
+        # Return 1 if rb is between currently allocated rbs of other user
 
+        return_penalty = 0
+        if self.rb_list[rb].rb_user is not None:
+            if rb > self.rb_list[rb].rb_user.allocated_rb_list[0] and rb < self.rb_list[rb].rb_user.allocated_rb_list[-1]:
+                return_penalty = -1000
+            self.rb_list[rb].rb_user.allocated_snr_list.remove(self.rb_list[rb].rb_user.snr_list[rb])
+            self.rb_list[rb].rb_user.allocated_rb_list.remove(rb)
+            self.rb_list[rb].rb_user.allocated_rb -= 1
+
+
+
+        self.rb_list[rb].rb_user = user
+        self.rb_list[rb].snr = user.snr_list[rb]
+        self.rb_list[rb].throughput = block_allocation.BlockAllocation.shannon_th(user.snr_list[rb])
+        self.rb_throughputs[rb] = self.rb_list[rb].throughput
+        user.allocated_snr_list.append(user.snr_list[rb])
+        user.allocated_rb_list.append(rb)
+        user.allocated_rb_list.sort()
+
+        return return_penalty
 
 
 

@@ -1,4 +1,5 @@
 import numpy as np
+import block_allocation
 import matplotlib.pyplot as plt
 
 class User:
@@ -15,6 +16,10 @@ class User:
         self.mean_snr = self.random_container['mean_snr'].uniform(-10, 10)
         # List of SNR values for each RB
         self.snr_list = self.generate_snr(self.mean_snr, self.rb_amount, self.random_container['rb_number'])
+        self.th_list = np.zeros(rb_nb)
+        for i in range(rb_nb):
+            self.th_list[i] = block_allocation.BlockAllocation.shannon_th(self.snr_list[i])
+
         self.allocated_snr_list = []  # SNR list of currently allocated RBs
         self.throughput = 0           # Throughput depends on number of allocated RBs and SNR
 
@@ -22,6 +27,7 @@ class User:
         self.user_id = user_id
         self.rb_number = self.rb_number_generator(User.MEAN_RB, self.random_container['rb_number'])  # Expected RB number
         self.allocated_rb = 0         # Number of currently allocated RBs to this user
+        self.allocated_rb_list = []   # list of allocated rbs
 
         return
 

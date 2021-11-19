@@ -1,13 +1,17 @@
 import event
+import DQL
 import priority_queue
 import logging
 import user
 import numpy as np
-
+import random
 
 class BlockAllocation(event.Event):
     # Chosen algorithm
-    ALGORITHM_TYPE = 0
+    ALGORITHM_TYPE = 2
+    env = DQL.NetworkEnv()
+    agent = DQL.DQNAAgent(env)
+    episode = 0
 
     def __init__(self, logger, event_queue_, time_, sim_network_, rb_max_nb_, rb_number_, rb_al_time_, update_time, rand_cont, stats):
         super().__init__(logger, event_queue_, time_, sim_network_, rb_max_nb_, rb_number_, rb_al_time_, rand_cont)
@@ -29,6 +33,10 @@ class BlockAllocation(event.Event):
         elif self.ALGORITHM_TYPE == 1:
             self.log.info("RB allocation using round robin algorithm")
             self.round_robin()
+
+        elif self.ALGORITHM_TYPE == 2:
+            self.log.info("RB allocation using DQL algorithm")
+            self.dql_allocation()
 
         # Update stats - system throughput
         self.stats.sys_th_list.append(self.sim_network.return_sys_th())
@@ -103,6 +111,55 @@ class BlockAllocation(event.Event):
             user.throughput = user.calculate_throughput()
 
         return
+
+    def dql_allocation(self):
+        self.episode += 1
+        self.agent.tensorboard = self.episode
+        episode_reward = 0
+        step = 1
+        self.env.reset(self.sim_network)
+        terminal_state = False
+
+        for u in self.sim_network.users_list:
+            current_state = self.env.set_observation(u)
+
+            for user_episode in range(u.rb_number):
+                if u == self.sim_network.users_list[-1] and user_episode == u.rb_number:
+                    terminal_state = True
+
+                if np.random.random() > DQL.epsilon:
+                    action = np.argmax(self.agent.get_qs(current_state))
+
+                else:
+                    action = random.randint(0, self.sim_network.rb_number)
+
+                new_state, reward, done = self.env.step(u, action)
+                episode_reward += reward
+
+                self.agent.update_replay_memory((current_state, action, reward, new_state, done))
+                self.agent.train(terminal_state)
+
+                current_state = new_state
+                step += 1
+
+        # Append episode reward to a list and log stats (every given number of episodes)
+        DQL.ep_rewards.append(episode_reward)
+        if not self.episode % DQL.AGGREGATE_STATS_EVERY or self.episode == 1:
+            average_reward = sum(DQL.ep_rewards[-DQL.AGGREGATE_STATS_EVERY:]) / len(DQL.ep_rewards[-DQL.AGGREGATE_STATS_EVERY:])
+            min_reward = min(DQL.ep_rewards[-DQL.AGGREGATE_STATS_EVERY:])
+            max_reward = max(DQL.ep_rewards[-DQL.AGGREGATE_STATS_EVERY:])
+            self.agent.tensorboard.update_stats(reward_avg=average_reward, reward_min=min_reward, reward_max=max_reward,
+                                           epsilon=DQL.epsilon)
+
+            # Save model, but only when min reward is greater or equal a set value
+            if min_reward >= DQL.MIN_REWARD:
+                self.agent.model.save(
+                    f'models/{DQL.MODEL_NAME}__{max_reward:_>7.2f}max_{average_reward:_>7.2f}avg_{min_reward:_>7.2f}min__{int(DQL.time.time())}.model')
+
+        # Decay epsilon
+        if DQL.epsilon > DQL.MIN_EPSILON:
+            DQL.epsilon *= DQL.EPSILON_DECAY
+            DQL.epsilon = max(DQL.MIN_EPSILON, DQL.epsilon)
 
     @staticmethod
     def shannon_th(snr):
