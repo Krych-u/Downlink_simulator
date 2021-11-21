@@ -13,6 +13,7 @@ class BlockAllocation(event.Event):
     agent = DQL.DQNAAgent(env)
     episode = 0
 
+
     def __init__(self, logger, event_queue_, time_, sim_network_, rb_max_nb_, rb_number_, rb_al_time_, update_time, rand_cont, stats):
         super().__init__(logger, event_queue_, time_, sim_network_, rb_max_nb_, rb_number_, rb_al_time_, rand_cont)
         self.update_time = update_time
@@ -114,7 +115,7 @@ class BlockAllocation(event.Event):
 
     def dql_allocation(self):
         self.episode += 1
-        self.agent.tensorboard = self.episode
+        self.agent.tensorboard.step = self.episode
         episode_reward = 0
         step = 1
         self.env.reset(self.sim_network)
@@ -129,35 +130,61 @@ class BlockAllocation(event.Event):
 
                 if np.random.random() > DQL.epsilon:
                     action = np.argmax(self.agent.get_qs(current_state))
+                    print(action)
 
                 else:
-                    action = random.randint(0, self.sim_network.rb_number)
+                    decision = random.randint(1, 10)
 
-                new_state, reward, done = self.env.step(u, action)
+                    # It won't allocate this rb
+                    if decision == 1:
+                        action = 50
+                    # Random rb
+                    elif len(u.allocated_rb_list) == 0:
+                        action = random.randint(0, self.sim_network.rb_number)
+                    else:
+                        if u.allocated_rb_list[0] == 0:
+                            action = u.allocated_rb_list[-1] + 1
+                        elif u.allocated_rb_list[-1] == self.sim_network.rb_number-1:
+                            action = u.allocated_rb_list[0] - 1
+                        else:
+                            decision = random.randint(0, 1)
+                            if decision == 0:
+                                action = u.allocated_rb_list[-1] + 1
+                            else:
+                                action = u.allocated_rb_list[0] - 1
+
+                new_state, reward = self.env.step(u, action)
                 episode_reward += reward
 
-                self.agent.update_replay_memory((current_state, action, reward, new_state, done))
-                self.agent.train(terminal_state)
+                if DQL.LEARNING:
+                    self.agent.update_replay_memory((current_state, action, reward, new_state))
+                    self.agent.train(terminal_state)
 
                 current_state = new_state
                 step += 1
 
         # Append episode reward to a list and log stats (every given number of episodes)
         DQL.ep_rewards.append(episode_reward)
-        if not self.episode % DQL.AGGREGATE_STATS_EVERY or self.episode == 1:
+        if (not self.episode % DQL.AGGREGATE_STATS_EVERY or self.episode == 1) and DQL.LEARNING:
             average_reward = sum(DQL.ep_rewards[-DQL.AGGREGATE_STATS_EVERY:]) / len(DQL.ep_rewards[-DQL.AGGREGATE_STATS_EVERY:])
             min_reward = min(DQL.ep_rewards[-DQL.AGGREGATE_STATS_EVERY:])
             max_reward = max(DQL.ep_rewards[-DQL.AGGREGATE_STATS_EVERY:])
             self.agent.tensorboard.update_stats(reward_avg=average_reward, reward_min=min_reward, reward_max=max_reward,
                                            epsilon=DQL.epsilon)
 
+            # Log
+            sys_av_th = self.sim_network.return_sys_th()
+            self.stats.sys_av_th_list.append(sys_av_th)
+
+            print(f'[Simulation time: {self.time}] -- Average reward: {int(average_reward)}  --  System throughput: {int(self.stats.return_av_th())}  '
+                  f'--  Users: {len(self.sim_network.users_list)}  --  {DQL.epsilon}')
+
             # Save model, but only when min reward is greater or equal a set value
-            if min_reward >= DQL.MIN_REWARD:
-                self.agent.model.save(
-                    f'models/{DQL.MODEL_NAME}__{max_reward:_>7.2f}max_{average_reward:_>7.2f}avg_{min_reward:_>7.2f}min__{int(DQL.time.time())}.model')
+            self.agent.model.save(
+                   f'models/{DQL.MODEL_NAME}__time__{DQL.STARTING_TIME}.model')
 
         # Decay epsilon
-        if DQL.epsilon > DQL.MIN_EPSILON:
+        if DQL.epsilon > DQL.MIN_EPSILON and DQL.LEARNING:
             DQL.epsilon *= DQL.EPSILON_DECAY
             DQL.epsilon = max(DQL.MIN_EPSILON, DQL.epsilon)
 

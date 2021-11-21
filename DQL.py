@@ -5,11 +5,12 @@ import block_allocation
 
 import tensorflow as tf
 import keras
-from keras.models import Sequential
-from keras.layers import Dense, Dropout, Conv2D, MaxPooling2D, Activation, Flatten
+from keras.models import Sequential, load_model
+from keras.layers import Dense, Dropout, Conv1D, Activation, Flatten
 from keras.callbacks import TensorBoard
 from collections import deque
 import time
+from datetime import datetime
 
 from tensorflow.keras.optimizers import Adam
 import numpy as np
@@ -20,20 +21,18 @@ import os
 from tensorflow.tools.docs.doc_controls import T
 
 DISCOUNT = 0.99
-DISCOUNT = 0.99
 REPLAY_MEMORY_SIZE = 50_000  # How many last steps to keep for model training
 MIN_REPLAY_MEMORY_SIZE = 1_000  # Minimum number of steps in a memory to start training
 MINIBATCH_SIZE = 64  # How many steps (samples) to use for training
 UPDATE_TARGET_EVERY = 5  # Terminal states (end of episodes)
-MODEL_NAME = 'Block Allocation'
-MIN_REWARD = -200  # For model save
+MODEL_NAME = 'DQL_Block_Allocation_4096x1024'
+MIN_REWARD = 15_000  # For model save
 MEMORY_FRACTION = 0.20
 
 # Environment settings
 EPISODES = 20_000
 
 # Exploration settings
-epsilon = 1  # not a constant, going to be decayed
 EPSILON_DECAY = 0.99975
 MIN_EPSILON = 0.001
 
@@ -43,12 +42,21 @@ SHOW_PREVIEW = False
 
 ep_rewards = [0]
 
+LOAD_MODEL = False
+STARTING_TIME = datetime.now().strftime("%H_%M_%S")
+LEARNING = True
+
+if LEARNING:
+    epsilon = 0.8  # Exploring state
+else:
+    epsilon = 0
 
 class NetworkEnv:
-    WRONG_ALLOCATION_PENALTY = 10000
+    WRONG_ALLOCATION_PENALTY = 200
+    CORRECT_ALLOCATION_REWARD = 200
+    EMPTY_ALLOCATION_REWARD = -20
     SPACE_SIZE = 51
-    OBSERVATION_SPACE = (50, 2, 1)
-
+    OBSERVATION_SPACE = (2, 50)
 
     def reset(self, network):
 
@@ -66,27 +74,29 @@ class NetworkEnv:
         self.episode_step += 1
 
         reward = 0
+        if action in user.allocated_rb_list:
+            reward = -self.WRONG_ALLOCATION_PENALTY
+        old_throughput = self.network.return_sys_th()
 
         # If action == simulator.Simulator.RB_NUMBER means that we won't allocate rb for this user
-        if action != simulator.Simulator.RB_NUMBER:
-            reward = self.network.update_rb(user, action)
-            if user.allocated_rb_list[0] - 1 == action or user.allocated_rb_list[-1] + 1 == action:
-                pass
+        if action < simulator.Simulator.RB_NUMBER:
+            reward += self.network.update_rb(user, action)
+
+        new_observation = np.array([self.network.rb_throughputs, user.th_list])
+        new_throughput = self.network.return_sys_th()
+
+        if reward < 0:
+            return new_observation, reward
+        else:
+            # Comparing allocation results to determine reward
+            if new_throughput > old_throughput:
+                reward = self.CORRECT_ALLOCATION_REWARD
+            elif new_throughput == old_throughput:
+                reward = self.EMPTY_ALLOCATION_REWARD
             else:
                 reward = -self.WRONG_ALLOCATION_PENALTY
 
-        new_observation = np.array([self.network.rb_throughputs, user.th_list])
-
-        done = False
-        if reward < 0:
-            pass
-        elif user == self.users_list[-1]:
-            reward = self.network.return_sys_th()
-            done = True
-        else:
-            reward = self.network.return_sys_th()
-
-        return new_observation, reward, done
+        return new_observation, reward
 
 
 # Own Tensorboard class
@@ -111,12 +121,12 @@ class ModifiedTensorBoard(TensorBoard):
 
         self._should_write_train_graph = False
 
-    # Overrided, saves logs with our step number
+    # Overrode, saves logs with our step number
     # (otherwise every .fit() will start writing from 0th step)
     def on_epoch_end(self, epoch, logs=None):
         self.update_stats(**logs)
 
-    # Overrided
+    # Overrode
     # We train for one batch only, no need to save anything at epoch end
     def on_batch_end(self, batch, logs=None):
         pass
@@ -149,33 +159,37 @@ class DQNAAgent:
         self.tensorboard = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}-{int(time.time())}")
         self.target_update_counter = 0
 
-
     def create_model(self):
-        model = Sequential()
 
-        model.add(Conv2D(512, (4, 1),
-                         input_shape=self.env.OBSERVATION_SPACE))
-        model.add(Activation('relu'))
-        model.add(MaxPooling2D(pool_size=(2, 1)))
-        model.add(Dropout(0.2))
+        if LOAD_MODEL:
 
-        model.add(Conv2D(256, (2, 1)))
-        model.add(Activation('relu'))
-        model.add(MaxPooling2D(pool_size=(2, 1)))
-        model.add(Dropout(0.2))
+            model = load_model(LOAD_MODEL)
+            print(f"Model loaded")
 
-        model.add(Flatten())
-        model.add(Dense(128))
+        else:
+            model = Sequential()
 
-        model.add(Dense(self.env.SPACE_SIZE, activation='linear'))  # ACTION_SPACE_SIZE = how many choices (9)
-        model.compile(loss="mse", optimizer=Adam(learning_rate=0.001), metrics=['accuracy'])
+            model.add(Conv1D(4096, 2,
+                             input_shape=self.env.OBSERVATION_SPACE))
+            model.add(Activation('relu'))
+            model.add(Dropout(0.2))
+
+            model.add(Conv1D(1024, 1))
+            model.add(Activation('relu'))
+            model.add(Dropout(0.2))
+
+            model.add(Flatten())
+            model.add(Dense(512))
+
+            model.add(Dense(self.env.SPACE_SIZE, activation='linear'))  # ACTION_SPACE_SIZE = how many choices (51)
+            model.compile(loss="mse", optimizer=Adam(learning_rate=0.001), metrics=['accuracy'])
         return model
 
     def update_replay_memory(self, transition):
         self.replay_memory.append(transition)
 
     def get_qs(self, state):
-        return self.model.predict(np.array(state).reshape(-1, *state.shape))[0]
+         return self.model.predict(np.array(state).reshape(-1, *state.shape))[0]
 
     def train(self, terminal_state):
         if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
@@ -192,14 +206,9 @@ class DQNAAgent:
         X = []
         y = []
 
-        for index, (current_state, action, reward, new_current_states, done) in enumerate(minibatch):
-            # If not a terminal state, get new q from future states, otherwise set it to 0
-            # almost like with Q Learning, but we use just part of equation here
-            if not done:
-                max_future_q = np.max(future_qs_list[index])
-                new_q = reward + DISCOUNT * max_future_q
-            else:
-                new_q = reward
+        for index, (current_state, action, reward, new_current_states) in enumerate(minibatch):
+            max_future_q = np.max(future_qs_list[index])
+            new_q = reward + DISCOUNT * max_future_q
 
             # Update Q value for given state
             current_qs = current_qs_list[index]

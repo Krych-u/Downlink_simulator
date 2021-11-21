@@ -6,10 +6,10 @@ import network
 def main():
     # Logger settings
     logger = logging.getLogger('Sim_log')
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.FATAL)
 
     ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
+    ch.setLevel(logging.FATAL)
 
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     ch.setFormatter(formatter)

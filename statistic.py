@@ -12,6 +12,8 @@ class Stat:
 
         # Stats to calculate after simulation
         self.av_th = 0
+        self.sys_av_th = 0
+        self.sys_av_th_list = []
         self.av_wait_time = 0
         self.av_qos = 0
         self.rb_all_time_list = []
@@ -38,8 +40,10 @@ class Stat:
 
         print(f'Average UE throughput: {self.av_th}')
         print(f'Average wait time: {self.av_wait_time}')
+        print(f'Average system throughput: {self.return_av_th()}')
 
-
+    def return_av_th(self):
+        return sum(self.sys_av_th_list) / len(self.sys_av_th_list)
 
 
 

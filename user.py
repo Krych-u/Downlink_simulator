@@ -63,4 +63,5 @@ class User:
         for snr in self.allocated_snr_list:
             th += User.RB_BANDWIDTH * np.log2(1 + pow(10, snr/10))
 
+        self.throughput = th
         return int(th)

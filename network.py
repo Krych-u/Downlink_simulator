@@ -1,6 +1,7 @@
 import user
 import block_allocation
 
+
 class ResourceBlock:
     def __init__(self):
         self.throughput = 0
@@ -56,6 +57,7 @@ class Network:
 
         users_to_delete = set()
         for us in self.users_list:
+            us.calculate_throughput()
 
             # It means that user received all data
             if us.data <= us.throughput * update_time + us.received_data:
@@ -66,7 +68,7 @@ class Network:
             else:
                 us.received_data += us.throughput * update_time
 
-        self.display_users_list()
+        # self.display_users_list()
 
         # Deleting users
         for us in users_to_delete:
@@ -86,7 +88,6 @@ class Network:
             self.stat.ue_th_list.append(us.throughput)
             self.stat.wait_time.append(time - us.start_time)
 
-
             self.log.info("Deleting user nr " + str(us.user_id))
             self.users_list.remove(us)
         return
@@ -102,10 +103,6 @@ class Network:
             u.allocated_snr_list.clear()
             u.allocated_rb_list.clear()
             u.allocated_rb = 0
-
-
-
-
 
     def push_user_to_list(self, data, user_id, start_time):
         new_user = user.User(data, user_id, self.rb_number, self.random_generator, start_time)
@@ -145,13 +142,13 @@ class Network:
 
         return_penalty = 0
         if self.rb_list[rb].rb_user is not None:
+
             if rb > self.rb_list[rb].rb_user.allocated_rb_list[0] and rb < self.rb_list[rb].rb_user.allocated_rb_list[-1]:
-                return_penalty = -1000
+                return_penalty = -200
+
             self.rb_list[rb].rb_user.allocated_snr_list.remove(self.rb_list[rb].rb_user.snr_list[rb])
             self.rb_list[rb].rb_user.allocated_rb_list.remove(rb)
             self.rb_list[rb].rb_user.allocated_rb -= 1
-
-
 
         self.rb_list[rb].rb_user = user
         self.rb_list[rb].snr = user.snr_list[rb]
@@ -159,11 +156,7 @@ class Network:
         self.rb_throughputs[rb] = self.rb_list[rb].throughput
         user.allocated_snr_list.append(user.snr_list[rb])
         user.allocated_rb_list.append(rb)
+        user.allocated_rb += 1
         user.allocated_rb_list.sort()
 
         return return_penalty
-
-
-
-
-
