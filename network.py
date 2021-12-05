@@ -121,13 +121,13 @@ class Network:
         self.log.info("RB list after allocation: ")
         i = 0
         for rb in self.rb_list:
+            i += 1
             if rb.rb_user is None:
                 self.log.info(
                     " Block nr " + str(i) + " : User: [ ID: None , snr: None , throughput: 0]")
                 continue
 
             self.log.info(f" Block nr {str(i)}: User: [ ID: {str(rb.rb_user.user_id)} , snr: {str(rb.snr)} , throughput: {str(rb.throughput)}]")
-            i += 1
 
     def return_sys_th(self):
 
@@ -137,26 +137,19 @@ class Network:
 
         return sum
 
-    def update_rb(self, user, rb):
-        # Return 1 if rb is between currently allocated rbs of other user
+    def update_rb(self, user_id, rb):
 
-        return_penalty = 0
-        if self.rb_list[rb].rb_user is not None:
+        ue = None
+        for u in self.users_list:
+            if u.user_id == user_id:
+                ue = u
+                break
 
-            if rb > self.rb_list[rb].rb_user.allocated_rb_list[0] and rb < self.rb_list[rb].rb_user.allocated_rb_list[-1]:
-                return_penalty = -200
-
-            self.rb_list[rb].rb_user.allocated_snr_list.remove(self.rb_list[rb].rb_user.snr_list[rb])
-            self.rb_list[rb].rb_user.allocated_rb_list.remove(rb)
-            self.rb_list[rb].rb_user.allocated_rb -= 1
-
-        self.rb_list[rb].rb_user = user
-        self.rb_list[rb].snr = user.snr_list[rb]
-        self.rb_list[rb].throughput = block_allocation.BlockAllocation.shannon_th(user.snr_list[rb])
+        self.rb_list[rb].rb_user = ue
+        self.rb_list[rb].snr = ue.snr_list[rb]
+        self.rb_list[rb].throughput = block_allocation.BlockAllocation.shannon_th(ue.snr_list[rb])
         self.rb_throughputs[rb] = self.rb_list[rb].throughput
-        user.allocated_snr_list.append(user.snr_list[rb])
-        user.allocated_rb_list.append(rb)
-        user.allocated_rb += 1
-        user.allocated_rb_list.sort()
-
-        return return_penalty
+        ue.allocated_snr_list.append(ue.snr_list[rb])
+        ue.allocated_rb_list.append(rb)
+        ue.allocated_rb += 1
+        ue.allocated_rb_list.sort()

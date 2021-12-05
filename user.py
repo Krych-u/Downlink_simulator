@@ -65,3 +65,11 @@ class User:
 
         self.throughput = th
         return int(th)
+
+    def allocation_array(self):
+        array = np.zeros(self.rb_amount)
+        for i in self.allocated_rb_list:
+            array[i] = 1
+
+        return array
+

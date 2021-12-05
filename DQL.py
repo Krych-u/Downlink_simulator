@@ -21,11 +21,11 @@ import os
 from tensorflow.tools.docs.doc_controls import T
 
 DISCOUNT = 0.99
-REPLAY_MEMORY_SIZE = 50_000  # How many last steps to keep for model training
-MIN_REPLAY_MEMORY_SIZE = 1_000  # Minimum number of steps in a memory to start training
-MINIBATCH_SIZE = 64  # How many steps (samples) to use for training
+REPLAY_MEMORY_SIZE = 1000  # How many last steps to keep for model training
+MIN_REPLAY_MEMORY_SIZE = 128 # Minimum number of steps in a memory to start training
+MINIBATCH_SIZE = 128  # How many steps (samples) to use for training
 UPDATE_TARGET_EVERY = 5  # Terminal states (end of episodes)
-MODEL_NAME = 'DQL_Block_Allocation_4096x1024'
+MODEL_NAME = '512x256'
 MIN_REWARD = 15_000  # For model save
 MEMORY_FRACTION = 0.20
 
@@ -52,11 +52,9 @@ else:
     epsilon = 0
 
 class NetworkEnv:
-    WRONG_ALLOCATION_PENALTY = 200
-    CORRECT_ALLOCATION_REWARD = 200
-    EMPTY_ALLOCATION_REWARD = -20
-    SPACE_SIZE = 51
-    OBSERVATION_SPACE = (2, 50)
+
+    SPACE_SIZE = 16
+    OBSERVATION_SPACE = (16, 51)
 
     def reset(self, network):
 
@@ -64,39 +62,75 @@ class NetworkEnv:
         self.users_list = network.users_list
         self.episode_step = 0
 
-        observation = np.array([network.rb_throughputs, network.rb_throughputs])
-        return observation
+        observation, id_arr = self.set_observation(0)
+        return observation, id_arr
 
-    def set_observation(self, user):
-        return np.array([self.network.rb_throughputs, user.th_list])
+    def set_observation_beta(self):
 
-    def step(self, user, action):
+        arr = np.array([self.network.rb_throughputs])
+        id_arr = np.array(np.ones(15)) * (-1)
+        i = 0
+
+        for ue in self.network.users_list:
+            if ue.allocated_rb < ue.rb_number:
+                i = i+1
+                arr = np.vstack([arr, ue.throughput])
+                id_arr[i-1] = ue.user_id
+
+            if i == 15:
+                break
+
+        if i < 15:
+            while i <= 15:
+                i = i + 1
+                arr = np.vstack([arr, np.zeros(self.network.rb_number)])
+
+        return arr, id_arr
+
+    def set_observation(self, rb):
+
+        row = self.network.rb_throughputs.copy()
+        row.append(rb)
+        arr = np.array([row])
+        id_arr = np.array(np.ones(15)) * (-1)
+
+        i = 0
+
+        for ue in self.network.users_list:
+            if ue.allocated_rb < ue.rb_number:
+                i = i+1
+                # Last column - how many rb can be allocated to this UE
+                row = ue.th_list
+                row = np.append(row, ue.rb_number - ue.allocated_rb)
+                arr = np.vstack([arr, row])
+                id_arr[i-1] = ue.user_id
+
+            if i == 15:
+                break
+
+        if i < 15:
+            while i < 15:
+                i = i + 1
+                arr = np.vstack([arr, np.zeros(self.network.rb_number + 1)])
+
+        return arr, id_arr
+
+    def step(self, action, id_arr, rb_nb):
         self.episode_step += 1
 
-        reward = 0
-        if action in user.allocated_rb_list:
-            reward = -self.WRONG_ALLOCATION_PENALTY
-        old_throughput = self.network.return_sys_th()
+        if action > 0 and id_arr[action-1] >= 0:
+            self.network.update_rb(id_arr[action-1], rb_nb)
 
-        # If action == simulator.Simulator.RB_NUMBER means that we won't allocate rb for this user
-        if action < simulator.Simulator.RB_NUMBER:
-            reward += self.network.update_rb(user, action)
+        done = False
+        new_observation, id_arr = self.set_observation(rb_nb)
 
-        new_observation = np.array([self.network.rb_throughputs, user.th_list])
-        new_throughput = self.network.return_sys_th()
-
-        if reward < 0:
-            return new_observation, reward
+        if rb_nb == self.network.rb_number - 1:
+            done = True
+            reward = self.network.return_sys_th()
         else:
-            # Comparing allocation results to determine reward
-            if new_throughput > old_throughput:
-                reward = self.CORRECT_ALLOCATION_REWARD
-            elif new_throughput == old_throughput:
-                reward = self.EMPTY_ALLOCATION_REWARD
-            else:
-                reward = -self.WRONG_ALLOCATION_PENALTY
+            reward = self.network.return_sys_th() / 100
 
-        return new_observation, reward
+        return new_observation, id_arr, reward, done
 
 
 # Own Tensorboard class
@@ -159,6 +193,7 @@ class DQNAAgent:
         self.tensorboard = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}-{int(time.time())}")
         self.target_update_counter = 0
 
+
     def create_model(self):
 
         if LOAD_MODEL:
@@ -169,17 +204,18 @@ class DQNAAgent:
         else:
             model = Sequential()
 
-            model.add(Conv1D(4096, 2,
+            model.add(Conv1D(128, 3,
                              input_shape=self.env.OBSERVATION_SPACE))
             model.add(Activation('relu'))
             model.add(Dropout(0.2))
 
-            model.add(Conv1D(1024, 1))
+            model.add(Conv1D(128, 2))
             model.add(Activation('relu'))
-            model.add(Dropout(0.2))
+
+            model.add(Conv1D(64, 1))
 
             model.add(Flatten())
-            model.add(Dense(512))
+            model.add(Dropout(0.2))
 
             model.add(Dense(self.env.SPACE_SIZE, activation='linear'))  # ACTION_SPACE_SIZE = how many choices (51)
             model.compile(loss="mse", optimizer=Adam(learning_rate=0.001), metrics=['accuracy'])
@@ -192,6 +228,8 @@ class DQNAAgent:
          return self.model.predict(np.array(state).reshape(-1, *state.shape))[0]
 
     def train(self, terminal_state):
+
+        # If there is not enough number of samples, don't train
         if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
             return
 
@@ -206,9 +244,13 @@ class DQNAAgent:
         X = []
         y = []
 
-        for index, (current_state, action, reward, new_current_states) in enumerate(minibatch):
-            max_future_q = np.max(future_qs_list[index])
-            new_q = reward + DISCOUNT * max_future_q
+        for index, (current_state, action, reward, new_current_states, done) in enumerate(minibatch):
+
+            if not done:
+                max_future_q = np.max(future_qs_list[index])
+                new_q = reward + DISCOUNT * max_future_q
+            else:
+                new_q = reward
 
             # Update Q value for given state
             current_qs = current_qs_list[index]

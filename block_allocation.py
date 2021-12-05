@@ -118,50 +118,28 @@ class BlockAllocation(event.Event):
         self.agent.tensorboard.step = self.episode
         episode_reward = 0
         step = 1
-        self.env.reset(self.sim_network)
+
         terminal_state = False
+        current_state, id_arr = self.env.reset(self.sim_network)
 
-        for u in self.sim_network.users_list:
-            current_state = self.env.set_observation(u)
+        for rb in range(self.sim_network.rb_number):
 
-            for user_episode in range(u.rb_number):
-                if u == self.sim_network.users_list[-1] and user_episode == u.rb_number:
-                    terminal_state = True
+            if np.random.random() > DQL.epsilon:
+                action = np.argmax(self.agent.get_qs(current_state))
+                print(action)
 
-                if np.random.random() > DQL.epsilon:
-                    action = np.argmax(self.agent.get_qs(current_state))
-                    print(action)
+            else:
+                action = np.random.randint(0, 15)
 
-                else:
-                    decision = random.randint(1, 10)
+            new_state, id_arr, reward, done = self.env.step(action, id_arr, rb)
+            episode_reward += reward
 
-                    # It won't allocate this rb
-                    if decision == 1:
-                        action = 50
-                    # Random rb
-                    elif len(u.allocated_rb_list) == 0:
-                        action = random.randint(0, self.sim_network.rb_number)
-                    else:
-                        if u.allocated_rb_list[0] == 0:
-                            action = u.allocated_rb_list[-1] + 1
-                        elif u.allocated_rb_list[-1] == self.sim_network.rb_number-1:
-                            action = u.allocated_rb_list[0] - 1
-                        else:
-                            decision = random.randint(0, 1)
-                            if decision == 0:
-                                action = u.allocated_rb_list[-1] + 1
-                            else:
-                                action = u.allocated_rb_list[0] - 1
+            if DQL.LEARNING:
+                self.agent.update_replay_memory((current_state, action, reward, new_state, done))
+                self.agent.train(terminal_state)
 
-                new_state, reward = self.env.step(u, action)
-                episode_reward += reward
-
-                if DQL.LEARNING:
-                    self.agent.update_replay_memory((current_state, action, reward, new_state))
-                    self.agent.train(terminal_state)
-
-                current_state = new_state
-                step += 1
+            current_state = new_state
+            step += 1
 
         # Append episode reward to a list and log stats (every given number of episodes)
         DQL.ep_rewards.append(episode_reward)
@@ -170,7 +148,7 @@ class BlockAllocation(event.Event):
             min_reward = min(DQL.ep_rewards[-DQL.AGGREGATE_STATS_EVERY:])
             max_reward = max(DQL.ep_rewards[-DQL.AGGREGATE_STATS_EVERY:])
             self.agent.tensorboard.update_stats(reward_avg=average_reward, reward_min=min_reward, reward_max=max_reward,
-                                           epsilon=DQL.epsilon)
+                                                epsilon=DQL.epsilon)
 
             # Log
             sys_av_th = self.sim_network.return_sys_th()
